@@ -41,3 +41,18 @@ func Average(numbers []int) float64 {
 	}
 	return float64(Sum(numbers)) / float64(len(numbers))
 }
+
+// Max returns the maximum value in a slice of integers
+func Max(numbers []int) int {
+	if len(numbers) == 0 {
+		return 0
+	}
+
+	max := numbers[0]
+	for _, num := range numbers {
+		if num > max {
+			max = num
+		}
+	}
+	return max
+}

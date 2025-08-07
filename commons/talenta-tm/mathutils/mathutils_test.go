@@ -63,3 +63,26 @@ func TestAverage(t *testing.T) {
 		t.Errorf("Average(%v) = %f; want 0", empty, result)
 	}
 }
+func TestMax(t *testing.T) {
+	tests := []struct {
+		name     string
+		numbers  []int
+		expected int
+	}{
+		{"positive numbers", []int{1, 2, 3, 4, 5}, 5},
+		{"negative numbers", []int{-10, -3, -7, -1}, -1},
+		{"mixed numbers", []int{-2, 0, 3, -1, 2}, 3},
+		{"single element", []int{42}, 42},
+		{"all same", []int{7, 7, 7, 7}, 7},
+		{"empty slice", []int{}, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Max(tt.numbers)
+			if result != tt.expected {
+				t.Errorf("Max(%v) = %d; want %d", tt.numbers, result, tt.expected)
+			}
+		})
+	}
+}

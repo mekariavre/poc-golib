@@ -1,0 +1,184 @@
+#!/usr/bin/env ruby
+
+require 'optparse'
+require 'open3'
+
+class LibManager
+  def initialize
+    @base_dir = Dir.pwd
+  end
+
+  def list_modules
+    standard_modules = []
+    commons_modules = []
+
+    Dir.glob("**/go.mod").reject { |path| path.start_with?("commons/") }.each do |path|
+      module_path = File.dirname(path)
+      standard_modules << { type: "standard", path: module_path }
+    end
+
+    if Dir.exist?("commons")
+      Dir.glob("commons/**/go.mod").each do |path|
+        module_path = File.dirname(path)
+        commons_modules << { type: "commons", path: module_path }
+      end
+    end
+
+    standard_modules + commons_modules
+  end
+
+  def print_modules
+    modules = list_modules
+    
+    if modules.empty?
+      puts "No Go modules found"
+      return
+    end
+    
+    puts "Found #{modules.length} module(s):"
+    modules.each do |mod|
+      type_label = mod[:type] == "standard" ? "[standard]" : ""
+      puts [type_label, mod[:path]].reject(&:empty?).join(' ')
+    end
+  end
+
+  def list_versions(module_path)
+    unless validate_module(module_path)
+      return false
+    end
+    
+    stdout, stderr, status = Open3.capture3("git tag -l '#{module_path}/v*' | sort -V")
+    
+    if status.success?
+      tags = stdout.strip.split("\n").reject(&:empty?)
+      if tags.empty?
+        puts "No versions found for module '#{module_path}'"
+      else
+        puts "Versions for '#{module_path}':"
+        tags.each { |tag| puts tag.sub("#{module_path}/", "") }
+      end
+    else
+      puts "Error retrieving versions: #{stderr}"
+      return false
+    end
+    
+    true
+  end
+
+  def create_version(module_path, version)
+    unless validate_module(module_path)
+      return false
+    end
+    
+    unless version.match?(/^v\d+\.\d+\.\d+$/)
+      puts "Error: Version must be in format v<MAJOR>.<MINOR>.<PATCH> (e.g., v1.0.0)"
+      return false
+    end
+    
+    tag_name = "#{module_path}/#{version}"
+    
+    stdout, _, status = Open3.capture3("git tag -l '#{tag_name}'")
+    if status.success? && !stdout.strip.empty?
+      puts "Error: Tag '#{tag_name}' already exists"
+      return false
+    end
+    
+    stdout, stderr, status = Open3.capture3("git tag '#{tag_name}'")
+    if status.success?
+      puts "✓ Created tag '#{tag_name}'"
+      puts "To push: git push origin #{tag_name}"
+      return true
+    else
+      puts "Error creating tag: #{stderr}"
+      return false
+    end
+  end
+
+  def publish_tags
+    stdout, stderr, status = Open3.capture3("git push origin --tags")
+    if status.success?
+      puts "✓ Published tags"
+    else
+      puts "Error publishing tags: #{stderr}"
+    end
+  end
+
+  private
+
+  def validate_module(module_path)
+    go_mod_path = File.join(module_path, "go.mod")
+    
+    unless File.exist?(go_mod_path)
+      puts "Error: Module '#{module_path}' not found (no go.mod file)"
+      return false
+    end
+    
+    true
+  end
+end
+
+def show_help
+  puts <<~HELP
+    Library Manager
+    
+    Usage:
+      #{File.basename($0)} list                   # List all modules
+      #{File.basename($0)} versions <module>      # List versions for a specific module
+      #{File.basename($0)} tag <module> <version> # Create new version tag for module
+      #{File.basename($0)} publish                # Publish all tags to origin
+
+    Examples:
+      #{File.basename($0)} list              # List all modules
+      #{File.basename($0)} versions logger   # Show versions for logger module
+      #{File.basename($0)} tag logger v1.2.0 # Create v1.2.0 tag for logger module
+      #{File.basename($0)} publish           # Publish all tags
+    
+  HELP
+end
+
+# Main execution
+if ARGV.empty? || ARGV.include?("-h") || ARGV.include?("--help")
+  show_help
+  exit 0
+end
+
+manager = LibManager.new
+command = ARGV[0]
+
+case command
+when "list", "ls"
+  manager.print_modules
+
+when "versions", "v"
+  if ARGV[1].nil?
+    puts "Error: Module path required"
+    puts "Usage: #{File.basename($0)} versions <module>"
+    exit 1
+  end
+  
+  success = manager.list_versions(ARGV[1])
+  exit 1 unless success
+
+when "tag", "t"
+  if ARGV[1].nil? || ARGV[2].nil?
+    puts "Error: Module path and version required"
+    puts "Usage: #{File.basename($0)} tag <module> <version>"
+    exit 1
+  end
+  
+  success = manager.create_version(ARGV[1], ARGV[2])
+  exit 1 unless success
+
+when "publish"
+  manager.publish_tags
+
+when "help", "-h", "--help"
+  show_help
+
+else
+  puts "Error: Unknown command '#{command}'"
+  puts ""
+  show_help
+  exit 1
+end
+
